@@ -550,6 +550,7 @@ function runChildProcess(command, args, options) {
         env,
         stdinData,
         timeoutMs,
+        useShell = false,
         onStdoutLine,
         onStderrLine
     } = options;
@@ -558,6 +559,7 @@ function runChildProcess(command, args, options) {
         const child = spawn(command, args, {
             cwd,
             env,
+            shell: useShell,
             stdio: ['pipe', 'pipe', 'pipe']
         });
 
@@ -927,6 +929,7 @@ async function runCodexIteration(input) {
     const command = String(codex.command || 'codex').trim() || 'codex';
     const args = buildCodexExecArgs(config, workspaceDir, resumeSessionId);
     const env = buildCodexEnvironment(config);
+    const useShell = process.platform === 'win32';
 
     let observedSessionId = '';
     const codexStreamState = { phase: '' };
@@ -944,6 +947,7 @@ async function runCodexIteration(input) {
             env,
             stdinData: prompt,
             timeoutMs: codex.timeoutMs,
+            useShell,
             onStdoutLine: (line) => {
                 const message = classifyCodexStreamLine(line, 'stdout', codexStreamState);
                 if (!message) {
