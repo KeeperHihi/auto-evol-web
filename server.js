@@ -627,16 +627,8 @@ function classifyCodexStreamLine(line, source, state) {
         return `[CODEX-MCP] ${content}`;
     }
 
-    if (/^(warn(ing)?|caution)\b/i.test(content)) {
+    if (/^reconnecting\.\.\.\s*\d+\/\d+/i.test(content) || /stream disconnected before completion/i.test(content)) {
         return `[CODEX-WARN] ${content}`;
-    }
-
-    if (/^(error|fatal|exception)\b/i.test(content)) {
-        return `[CODEX-ERR] ${content}`;
-    }
-
-    if (source === 'stderr' && /(\berror\b|\bfatal\b|\bexception\b)/i.test(content)) {
-        return `[CODEX-ERR] ${content}`;
     }
 
     if (state.phase === 'user') {
@@ -650,6 +642,18 @@ function classifyCodexStreamLine(line, source, state) {
     }
     if (state.phase === 'exec') {
         return `[CODEX-EXEC] ${content}`;
+    }
+
+    if (/^(warn(ing)?|caution)\b/i.test(content)) {
+        return `[CODEX-WARN] ${content}`;
+    }
+
+    if (/^(error|fatal|exception)\b/i.test(content)) {
+        return `[CODEX-ERR] ${content}`;
+    }
+
+    if (source === 'stderr' && /(\berror\b|\bfatal\b|\bexception\b)/i.test(content)) {
+        return `[CODEX-ERR] ${content}`;
     }
 
     return source === 'stderr' ? `[CODEX-STDERR] ${content}` : `[CODEX-STDOUT] ${content}`;
