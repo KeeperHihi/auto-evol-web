@@ -25,11 +25,12 @@
 
 ### 2. 部署源码
    
+先 `clone` 本仓库的 `main` 分支：
 ```bash
 # 只需要 main 分支，demo 分支为生成的样例，想查看者也可以一起 clone 下来看看 
 git clone --branch main --single-branch https://github.com/KeeperHihi/auto-revo-web.git
 ```
-**新建**一个你自己的 `github` 仓库，比如叫 demo
+然后**新建**一个你自己的 `github` 仓库，比如叫 demo
 
 然后把本项目目录下的 `.git` 目录删掉，进入终端，依次执行：
 ```bash
