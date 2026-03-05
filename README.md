@@ -34,7 +34,7 @@ npm install
 # 执行下面指令
 cp config.example.json config.json
 
-# 然后在 config.json 修改参数:
+# 然后在 config.json 中修改参数:
 
 # gitBranch: 你希望新项目的分支名
 
