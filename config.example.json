@@ -5,7 +5,7 @@
   "evolution": {
     "defaultIterations": 3,
     "maxIterations": 1000,
-    "intervalMs": 3000,
+    "intervalMs": 30000,
     "appendIterationContext": true,
     "systemPromptFile": "prompts/sys-prompt.md"
   },
@@ -21,7 +21,7 @@
     "model": "gpt-5.3-codex-xhigh",
     "profile": "",
     "fullAuto": false,
-    "dangerouslyBypassApprovalsAndSandbox": false,
+    "dangerouslyBypassApprovalsAndSandbox": true,
     "timeoutMs": 1800000,
     "reconnectingRounds": 10,
     "environment": {},
@@ -30,8 +30,8 @@
       "model_reasoning_effort=\"xhigh\""
     ],
     "additionalWritableDirs": [],
-    "autoGitCommit": false,
-    "autoGitPush": false,
+    "autoGitCommit": true,
+    "autoGitPush": true,
     "gitRemote": "origin",
     "gitBranch": "demo",
     "gitCommitPrefix": "Codex Evolution:"
