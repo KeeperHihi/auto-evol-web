@@ -57,7 +57,7 @@ npm run cli-evolve
 传参模式：
 
 ```bash
-# run.sh
+# 新建 run.sh，写上你希望进化的方向和迭代次数
 npm run cli-evolve -- \
     --prompt="一个支持多用户在线匹配对战的五子棋网页，特点是UI非常科幻、丝滑，给用户最爽的对局体验" \
     --iterations=10
