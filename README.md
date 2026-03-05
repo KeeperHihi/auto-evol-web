@@ -35,11 +35,9 @@ git clone --branch main --single-branch https://github.com/KeeperHihi/auto-revo-
 ```
 然后**新建**一个你自己的 `github` 仓库，比如叫 demo
 
-然后把本项目目录下的 `.git` 目录删掉，进入终端，依次执行：
+然后终端进入项目根目录，依次执行：
 ```bash
-git init
-git remote add origin https://github.com/xxx/demo.git
-git branch -M main
+git remote set-url origin https://github.com/xxx/demo.git
 git add .
 git commit -m "init"
 git push origin main
@@ -147,3 +145,7 @@ npm run cli-evolve -- \
 | `codex.gitRemote` | string | 推送远端名 |
 | `codex.gitBranch` | string | 进化分支名 (禁止为 `main`) |
 | `codex.gitCommitPrefix` | string | 自动提交消息前缀 |
+
+## 版权声明
+
+本项目版权归 [KeeperHihi](https://github.com/KeeperHihi) 所有。
