@@ -126,15 +126,13 @@ function getDefaultConfig() {
         codex: {
             enabled: true,
             command: 'codex',
-            model: 'gpt-5.3-codex',
+            model: 'gpt-5.3-codex-xhigh',
             profile: '',
             fullAuto: false,
             dangerouslyBypassApprovalsAndSandbox: false,
             timeoutMs: 1800000,
-            openAIApiKey: '',
-            openAIBaseUrl: '',
             environment: {},
-            extraArgs: ['-c', 'model_reasoning_effort="high"'],
+            extraArgs: ['-c', 'model_reasoning_effort="xhigh"'],
             additionalWritableDirs: [],
             autoGitCommit: false,
             autoGitPush: false,
@@ -196,8 +194,6 @@ function normalizeConfig(rawConfig) {
     normalized.codex.fullAuto = Boolean(normalized.codex.fullAuto);
     normalized.codex.dangerouslyBypassApprovalsAndSandbox = Boolean(normalized.codex.dangerouslyBypassApprovalsAndSandbox);
     normalized.codex.timeoutMs = Math.max(1000, Math.floor(Number(normalized.codex.timeoutMs) || defaults.codex.timeoutMs));
-    normalized.codex.openAIApiKey = String(normalized.codex.openAIApiKey || '').trim();
-    normalized.codex.openAIBaseUrl = String(normalized.codex.openAIBaseUrl || '').trim();
     normalized.codex.environment = normalized.codex.environment && typeof normalized.codex.environment === 'object' && !Array.isArray(normalized.codex.environment)
         ? normalized.codex.environment
         : {};
@@ -417,13 +413,6 @@ function buildCodexEnvironment(config) {
     const codexConfig = config.codex || {};
     const llmAccess = config.llmAccess || {};
     const env = { ...process.env };
-
-    if (codexConfig.openAIApiKey) {
-        env.OPENAI_API_KEY = codexConfig.openAIApiKey;
-    }
-    if (codexConfig.openAIBaseUrl) {
-        env.OPENAI_BASE_URL = codexConfig.openAIBaseUrl;
-    }
 
     if (llmAccess.apiKey) {
         env.LLM_ACCESS_API_KEY = String(llmAccess.apiKey).trim();

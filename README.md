@@ -21,7 +21,8 @@ AI 自进化网站框架：接收用户 Prompt，拼接系统提示词，调用 
 
 - Node.js 18+（推荐 22 LTS）
 - npm 9+
-- 可选：`codex` CLI（需要实际执行 AI 进化时）
+- 必需：`codex` CLI（执行 AI 进化）
+- 必需：本机已完成 Codex 登录与配置（`~/.codex/config.toml`、`~/.codex/auth.json`）
 
 ## 快速开始（首次运行必看）
 
@@ -31,7 +32,17 @@ AI 自进化网站框架：接收用户 Prompt，拼接系统提示词，调用 
 npm install
 ```
 
-2. 准备配置
+2. 先在本机验证 Codex 可用（必须先完成）
+
+请先在本机完成 `~/.codex/config.toml` 和 `~/.codex/auth.json` 配置，然后在项目外任意目录执行：
+
+```bash
+codex -m gpt-5.3-codex-xhigh -c model_reasoning_effort="xhigh"
+```
+
+该命令可以正常运行后，再继续下面步骤。
+
+3. 准备配置
 
 ```bash
 cp config.example.json config.json
@@ -43,15 +54,15 @@ cp config.example.json config.json
 Copy-Item config.example.json config.json
 ```
 
-3. 按需修改 `config.json`
+4. 按需修改 `config.json`
 
 - `server.port`：服务端口
 - `evolution.defaultIterations` / `maxIterations`：默认与最大迭代轮次
-- `codex.*`：Codex CLI 行为与环境注入
+- `codex.*`：Codex CLI 执行行为（不包含密钥配置，密钥来源为本机 `~/.codex`）
 - `llmAccess.*`：可选外部模型调用信息（仅三项都配置才注入提示词）
 - 若启用 `codex.autoGitCommit/autoGitPush`，`codex.gitBranch` 必须是非 `main` 分支（例如 `evolution/auto-revo`）
 
-4. 运行
+5. 运行
 
 Web 模式：
 
@@ -123,6 +134,7 @@ npm run dev:watch
 1. 先确认本机可直接执行 `codex --version`。
 2. 如命令名不同，在 `config.json` 中改 `codex.command`。
 3. 确认当前终端环境变量能找到该命令。
+4. 再验证一次：`codex -m gpt-5.3-codex-xhigh -c model_reasoning_effort="xhigh"`。
 
 ### 2) Codex 执行中网络/权限失败
 
@@ -131,7 +143,7 @@ npm run dev:watch
 处理建议：
 
 1. 检查网络代理配置是否可访问模型服务。
-2. 确认 Codex 可写其状态目录（如 `$HOME/.codex`）。
+2. 确认 `~/.codex/config.toml` 与 `~/.codex/auth.json` 可被当前用户读取，且 Codex 可写其状态目录（如 `$HOME/.codex`）。
 3. 在受限容器中运行时，先验证最小命令是否可执行。
 
 ### 3) 提示 `codex.gitBranch 不能是 main`
@@ -145,8 +157,9 @@ npm run dev:watch
 
 ## 安全说明
 
-1. `config.json` 通常包含密钥，不要提交到仓库。
+1. `config.json` 可能包含密钥（如 `llmAccess.apiKey` 或 `codex.environment` 中的敏感变量），不要提交到仓库。
 2. 当前实现不会把 `llmAccess.apiKey` 明文注入到系统提示词；会通过环境变量 `LLM_ACCESS_API_KEY` 提供给 Codex 子进程。
+3. 当前实现不再从 `config.json` 注入 `OPENAI_API_KEY/OPENAI_BASE_URL`；Codex 凭证统一从本机 `~/.codex` 读取。
 
 ## 运行流程
 
@@ -176,8 +189,6 @@ npm run dev:watch
 | `codex.fullAuto` | boolean | 是否启用 `--full-auto` |
 | `codex.dangerouslyBypassApprovalsAndSandbox` | boolean | 是否启用高风险放开参数 |
 | `codex.timeoutMs` | number | 单轮执行超时（ms） |
-| `codex.openAIApiKey` | string | 注入 `OPENAI_API_KEY` |
-| `codex.openAIBaseUrl` | string | 注入 `OPENAI_BASE_URL` |
 | `codex.environment` | object | 额外环境变量 |
 | `codex.extraArgs` | string[] | 追加给 Codex 的参数 |
 | `codex.additionalWritableDirs` | string[] | 额外可写目录（仅允许项目内路径） |
@@ -186,3 +197,5 @@ npm run dev:watch
 | `codex.gitRemote` | string | 推送远端名 |
 | `codex.gitBranch` | string | 进化分支名（禁止 `main`，不存在时会自动创建并切换） |
 | `codex.gitCommitPrefix` | string | 自动提交消息前缀 |
+
+说明：Codex 的账号与模型访问配置由本机 `~/.codex/config.toml` 与 `~/.codex/auth.json` 管理。

@@ -17,13 +17,11 @@
   "codex": {
     "enabled": true,
     "command": "codex",
-    "model": "gpt-5.3-codex",
+    "model": "gpt-5.3-codex-xhigh",
     "profile": "",
     "fullAuto": false,
     "dangerouslyBypassApprovalsAndSandbox": false,
     "timeoutMs": 1800000,
-    "openAIApiKey": "",
-    "openAIBaseUrl": "",
     "environment": {},
     "extraArgs": [
       "-c",
