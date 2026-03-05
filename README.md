@@ -49,7 +49,7 @@ cp config.example.json config.json
 
 ```bash
 npm run dev
-# 然后打开本地 `localhost:6161`，测试网页是否能正常显示。
+# 然后打开本地 localhost:6161，测试网页是否能正常显示。
 ```
 
 5. 启动自进化（CLI）
