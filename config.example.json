@@ -22,6 +22,7 @@
     "fullAuto": false,
     "dangerouslyBypassApprovalsAndSandbox": false,
     "timeoutMs": 1800000,
+    "reconnectingRounds": 10,
     "environment": {},
     "extraArgs": [
       "-c",

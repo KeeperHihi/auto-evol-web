@@ -189,6 +189,7 @@ npm run dev:watch
 | `codex.fullAuto` | boolean | 是否启用 `--full-auto` |
 | `codex.dangerouslyBypassApprovalsAndSandbox` | boolean | 是否启用高风险放开参数 |
 | `codex.timeoutMs` | number | 单轮执行超时（ms） |
+| `codex.reconnectingRounds` | number | 单轮失败后自动重连重试次数（例如 `10`） |
 | `codex.environment` | object | 额外环境变量 |
 | `codex.extraArgs` | string[] | 追加给 Codex 的参数 |
 | `codex.additionalWritableDirs` | string[] | 额外可写目录（仅允许项目内路径） |

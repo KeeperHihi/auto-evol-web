@@ -131,6 +131,7 @@ function getDefaultConfig() {
             fullAuto: false,
             dangerouslyBypassApprovalsAndSandbox: false,
             timeoutMs: 1800000,
+            reconnectingRounds: 10,
             environment: {},
             extraArgs: ['-c', 'model_reasoning_effort="xhigh"'],
             additionalWritableDirs: [],
@@ -194,6 +195,12 @@ function normalizeConfig(rawConfig) {
     normalized.codex.fullAuto = Boolean(normalized.codex.fullAuto);
     normalized.codex.dangerouslyBypassApprovalsAndSandbox = Boolean(normalized.codex.dangerouslyBypassApprovalsAndSandbox);
     normalized.codex.timeoutMs = Math.max(1000, Math.floor(Number(normalized.codex.timeoutMs) || defaults.codex.timeoutMs));
+    {
+        const reconnectingRoundsValue = Number(normalized.codex.reconnectingRounds);
+        normalized.codex.reconnectingRounds = Number.isFinite(reconnectingRoundsValue)
+            ? Math.max(0, Math.floor(reconnectingRoundsValue))
+            : defaults.codex.reconnectingRounds;
+    }
     normalized.codex.environment = normalized.codex.environment && typeof normalized.codex.environment === 'object' && !Array.isArray(normalized.codex.environment)
         ? normalized.codex.environment
         : {};
@@ -893,6 +900,7 @@ async function executeEvolutionJob(input) {
     let resumeSessionId = '';
     let changedCountTotal = 0;
     let executedIterations = 0;
+    const reconnectingRounds = Math.max(0, Math.floor(Number(config.codex?.reconnectingRounds) || 0));
 
     for (let i = 1; i <= totalIterations; i += 1) {
         if (shouldStop()) {
@@ -925,17 +933,42 @@ async function executeEvolutionJob(input) {
             appendIterationContext: config.evolution.appendIterationContext
         });
 
-        let result;
-        try {
-            result = await runCodexIteration({
-                config,
-                workspaceDir,
-                prompt: iterationPrompt,
-                sendUpdate: (message) => sendUpdate(message, { loading: true, iteration: i }),
-                resumeSessionId
-            });
-        } catch (error) {
-            throw new Error(`第 ${i} 轮失败: ${error.message}`);
+        let result = null;
+        let iterationError = null;
+        for (let attempt = 0; attempt <= reconnectingRounds; attempt += 1) {
+            try {
+                result = await runCodexIteration({
+                    config,
+                    workspaceDir,
+                    prompt: iterationPrompt,
+                    sendUpdate: (message) => sendUpdate(message, { loading: true, iteration: i }),
+                    resumeSessionId
+                });
+                iterationError = null;
+                break;
+            } catch (error) {
+                iterationError = error;
+                if (attempt >= reconnectingRounds) {
+                    break;
+                }
+
+                const nextAttempt = attempt + 1;
+                sendUpdate(
+                    `[RECONNECT] 第 ${i} 轮执行失败，准备重连重试 ${nextAttempt}/${reconnectingRounds}: ${error.message}`,
+                    {
+                        loading: true,
+                        status: 'reconnecting',
+                        iteration: i,
+                        reconnectAttempt: nextAttempt,
+                        reconnectTotal: reconnectingRounds
+                    }
+                );
+                await wait(2000);
+            }
+        }
+
+        if (!result) {
+            throw new Error(`第 ${i} 轮失败: ${iterationError ? iterationError.message : '未知错误'}`);
         }
 
         previousTail = result.outputTail || '';
