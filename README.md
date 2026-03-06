@@ -30,7 +30,7 @@
 - `python`
 - `git`
 - 本机必须配置好 `codex CLI`
-- （非常建议）若要启用 `autoGitInit`，还需安装 `gh` 并登录：`gh auth login`。
+- （非常建议）若要启用 `autoGitInit`，还需安装 `gh` 并登录：`gh auth login`，便于自动化 `git` 操作
 
 ## 快速开始
 
