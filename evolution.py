@@ -535,7 +535,7 @@ def run_codex_iteration(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Auto-Revolution Python runner for websites in ./webs/<siteName>"
+        description="Auto-Evolution Python runner for websites in ./webs/<siteName>"
     )
     parser.add_argument("--site", help="Override siteName from config.json")
     parser.add_argument(

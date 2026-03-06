@@ -1,6 +1,6 @@
-# Auto-Revolution-Web (Python)
+# Auto-Evolution-Web (Python)
 
-当前主版本已迁移到 Python，核心入口是 `revolution.py`。  
+当前主版本已迁移到 Python，核心入口是 `evolution.py`。  
 旧版 JavaScript 实现保留在 `JS-version/`，仅作为历史参考。
 
 ## 核心变化
@@ -11,7 +11,7 @@
 新模式：
 - 每个网站对应 `./webs/<siteName>` 下的一个子目录。
 - 每个子目录就是用户自己的 git 仓库。
-- `revolution.py` 会在该子目录内直接调用 Codex 进行自进化。
+- `evolution.py` 会在该子目录内直接调用 Codex 进行自进化。
 
 ## 快速开始
 
@@ -38,15 +38,15 @@ git clone <your-repo-url> webs/<siteName>
 5. 启动自进化：
 
 ```bash
-python3 revolution.py
+python3 evolution.py
 ```
 
 可选覆盖参数：
 
 ```bash
-python3 revolution.py --site=my-site --iterations=10
-python3 revolution.py --prompt "Build a polished SaaS landing page"
-python3 revolution.py --dry-run
+python3 evolution.py --site=my-site --iterations=10
+python3 evolution.py --prompt "Build a polished SaaS landing page"
+python3 evolution.py --dry-run
 ```
 
 ## 配置字段（`config.json`）

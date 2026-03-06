@@ -1,4 +1,4 @@
-# Auto-Revolution-Web ---- 一句话实现你心目中的网页
+# Auto-Evolution-Web ---- 一句话实现你心目中的网页
 
 `Codex` 驱动的自进化网页框架
 
