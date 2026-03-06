@@ -1,5 +1,6 @@
 {
   "projectName": "demo",
+  "needAutoUpgrade": true,
   "iterations": 3,
   "intervalSeconds": 30,
   "appendIterationContext": true,

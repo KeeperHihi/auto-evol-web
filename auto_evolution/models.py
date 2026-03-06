@@ -37,6 +37,7 @@ class CodexConfig:
 @dataclass
 class AppConfig:
     project_name: str = "demo"
+    need_auto_upgrade: bool = True
     iterations: int = 3
     interval_seconds: int = 30
     append_iteration_context: bool = True

@@ -10,7 +10,6 @@
 - `projects` 下的每个子目录都是一个独立项目仓库，形如 `projects/<projectName>`。
 - 你可以从空仓库开始，只提供一句创意 `idea` 逐轮进化。
 - 每轮迭代后，脚本会在该子仓库内自动推送到远程仓库。
-- 每次启动项目时，会自动 `git pull` 同步当前框架仓库的最新版本，所以建议不要擅改框架代码。
 
 ## 代码结构
 
@@ -52,6 +51,7 @@ cp config.template.json config.json
 - `iterations`: 你希望进化的迭代次数。
 - (推荐) `autoGitInit`: 是否愿意自动化创建仓库（默认为 `false`，必须 `gh` 登录才能为 `true`，建议改为 `true`）
 - (可选) `llmAccess`: 如果你希望进化过程中可以加入调用大模型的功能，请提供一个可调用的大模型配置，其中 `apiKey` 会以环境变量的形式加载，无需担心泄漏问题。
+- (可选) `needAutoUpgrade`: 是否在每次启动时自动检查并拉取当前框架仓库更新（默认 `true`）,若你希望修改代码，可设置此参数为 `false`。
 
 ### 2. 准备承载项目的空仓库（若已登录 `gh` 并配置 `autoGitInit=true` 则可跳过本节）
 
@@ -98,6 +98,7 @@ python evolution.py --dry-run # 测试本地流程是否能跑通
 ## 配置字段（`config.json`）
 
 - `projectName`：你的项目仓库名，对应 `projects/<projectName>`。
+- `needAutoUpgrade`：是否在每次启动时自动检查并拉取当前框架仓库更新，默认 `true`。
 - `iterations`：迭代轮次。
 - `intervalSeconds`：轮次间隔秒数。
 - `appendIterationContext`：是否在每轮 Prompt 附带迭代上下文。

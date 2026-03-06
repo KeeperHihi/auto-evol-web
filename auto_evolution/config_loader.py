@@ -118,6 +118,8 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
 
     if "projectName" in raw:
         config.project_name = to_str(raw.get("projectName"), config.project_name)
+    if "needAutoUpgrade" in raw:
+        config.need_auto_upgrade = to_bool(raw.get("needAutoUpgrade"), config.need_auto_upgrade)
     if "iterations" in raw:
         config.iterations = to_int(raw.get("iterations"), config.iterations, minimum=1)
     if "intervalSeconds" in raw:

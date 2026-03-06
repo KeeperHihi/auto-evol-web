@@ -36,9 +36,11 @@ def run_evolution(
     prompt_override: str | None,
     dry_run_override: bool,
 ) -> int:
-    ensure_project_is_latest(APP_ROOT, remote_name="origin", branch_name="main")
-
     config = load_config(CONFIG_FILE)
+    if config.need_auto_upgrade:
+        ensure_project_is_latest(APP_ROOT, remote_name="origin", branch_name="main")
+    else:
+        log("[GIT] needAutoUpgrade=false，跳过框架仓库更新检查")
 
     if project_override:
         config.project_name = project_override.strip()
