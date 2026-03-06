@@ -53,6 +53,7 @@ cp config.template.json config.json
 
 ### 2. 准备站点空仓库（若已登录 `gh` 并配置 `autoGitInit=True` 则可跳过本节）：
 
+在 `github` 上创建一个空仓库，假设仓库名叫 `demo`，然后在项目根目录执行：
 ```bash
 # 示例站点名：`demo`
 mkdir -p webs/demo
