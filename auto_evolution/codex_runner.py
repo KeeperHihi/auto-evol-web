@@ -4,6 +4,7 @@ import os
 import queue
 import re
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -19,6 +20,39 @@ from auto_evolution.models import AppConfig
 from auto_evolution.text_tools import extract_tail, sanitize_commit_message
 
 SESSION_ID_PATTERN = re.compile(r"session id:\s*([0-9a-f-]{36})", re.IGNORECASE)
+
+
+def _resolve_command_on_windows(command: str) -> str:
+    # Prefer PATH lookup first, then try common executable suffixes and npm global bin.
+    found = shutil.which(command)
+    if found:
+        return found
+
+    base = str(command or "").strip().strip('"')
+    if not base:
+        return command
+
+    for suffix in (".cmd", ".exe", ".bat"):
+        candidate = f"{base}{suffix}" if not base.lower().endswith(suffix) else base
+        found = shutil.which(candidate)
+        if found:
+            return found
+
+    appdata = os.environ.get("APPDATA", "").strip()
+    if appdata:
+        npm_bin = Path(appdata) / "npm"
+        for suffix in (".cmd", ".exe", ".bat"):
+            candidate = npm_bin / f"{base}{suffix}"
+            if candidate.exists():
+                return str(candidate)
+
+    return command
+
+
+def resolve_codex_command(command: str) -> str:
+    if os.name != "nt":
+        return shutil.which(command) or command
+    return _resolve_command_on_windows(command)
 
 
 def extract_session_id(text: str) -> str:
@@ -101,6 +135,8 @@ def run_codex_process_with_stream(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
         env=env,
     )
@@ -197,7 +233,7 @@ def run_codex_iteration(
     prompt: str,
     incoming_session_id: str,
 ) -> tuple[str, str, str]:
-    command = config.codex.command
+    command = resolve_codex_command(config.codex.command)
     timeout_seconds = config.codex.timeout_seconds
     retries = config.codex.retries
     session_id = incoming_session_id
@@ -219,7 +255,9 @@ def run_codex_iteration(
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
-                f"未找到 Codex 命令：{command}。请先确认 Codex CLI 可用。"
+                "未找到 Codex 命令："
+                f"{config.codex.command}（解析后：{command}）。"
+                "请先确认 Codex CLI 可用，或在 config.json 的 codex.command 中填写可执行文件绝对路径。"
             ) from exc
         except subprocess.TimeoutExpired as exc:
             partial_stdout = getattr(exc, "stdout", None) or getattr(exc, "output", None) or ""
