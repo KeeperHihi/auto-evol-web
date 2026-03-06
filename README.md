@@ -28,7 +28,7 @@
 - `python`，基础环境即可
 - `git`，保证本机的 `user.name` 和 `user.email` 字段配置正确，且可以免密操作
 - 本机必须配置好 `codex CLI`
-- （非常建议）安装 `gh` 并登录：`gh auth login`，便于自动化 `git` 操作
+- （非常建议）安装 `gh` 并登录：`gh auth login`，便于自动化 `git` 创建仓库等操作。
 
 ## 快速开始
 
