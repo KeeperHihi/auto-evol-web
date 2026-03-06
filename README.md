@@ -43,7 +43,7 @@
 cp config.template.json config.json
 ```
 `config.json` 中要修改的字段：
-- `siteName`: 你希望进化网站的仓库名。
+- `siteName`: 你希望进化的网站仓库名。
 - `iterations`: 你希望进化的迭代次数。
 - (推荐) `autoGitInit`: 是否愿意自动化创建仓库（默认为 `false`，必须 `gh` 登录才能为 `true`，建议改为 `true`）
 - (可选) `llmAccess`: 如果你希望进化过程中可以加入调用大模型的功能，请提供一个可调用的大模型配置，其中 `apiKey` 会以环境变量的形式加载，无需担心泄漏问题。
