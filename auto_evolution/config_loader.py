@@ -115,14 +115,11 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
 
     llm_access_raw = raw.get("llmAccess", {}) if isinstance(raw.get("llmAccess"), dict) else {}
     codex_raw = raw.get("codex", {}) if isinstance(raw.get("codex"), dict) else {}
-    evolution_raw = raw.get("evolution", {}) if isinstance(raw.get("evolution"), dict) else {}
 
     if "siteName" in raw:
         config.site_name = to_str(raw.get("siteName"), config.site_name)
     if "iterations" in raw:
         config.iterations = to_int(raw.get("iterations"), config.iterations, minimum=1)
-    if "iteration" in raw:
-        config.iterations = to_int(raw.get("iteration"), config.iterations, minimum=1)
     if "intervalSeconds" in raw:
         config.interval_seconds = to_int(raw.get("intervalSeconds"), config.interval_seconds, minimum=0)
     if "appendIterationContext" in raw:
@@ -134,29 +131,12 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
     if "userPromptFile" in raw:
         config.user_prompt_file = to_str(raw.get("userPromptFile"), config.user_prompt_file)
 
-    if "defaultIterations" in evolution_raw and "iterations" not in raw:
-        config.iterations = to_int(evolution_raw.get("defaultIterations"), config.iterations, minimum=1)
-    if "intervalMs" in evolution_raw and "intervalSeconds" not in raw:
-        config.interval_seconds = to_int(
-            evolution_raw.get("intervalMs"), config.interval_seconds * 1000, minimum=0
-        ) // 1000
-    if "appendIterationContext" in evolution_raw and "appendIterationContext" not in raw:
-        config.append_iteration_context = to_bool(
-            evolution_raw.get("appendIterationContext"), config.append_iteration_context
-        )
-    if "systemPromptFile" in evolution_raw and "systemPromptFile" not in raw:
-        config.system_prompt_file = to_str(
-            evolution_raw.get("systemPromptFile"), config.system_prompt_file
-        )
-
     if llm_access_raw:
         config.llm_access.url = to_str(llm_access_raw.get("url"), config.llm_access.url)
         config.llm_access.api_key = to_str(llm_access_raw.get("apiKey"), config.llm_access.api_key)
         config.llm_access.model = to_str(llm_access_raw.get("model"), config.llm_access.model)
 
     if codex_raw:
-        if "gitBranch" in codex_raw and "siteName" not in raw:
-            config.site_name = to_str(codex_raw.get("gitBranch"), config.site_name)
         if "command" in codex_raw:
             config.codex.command = to_str(codex_raw.get("command"), config.codex.command)
         if "model" in codex_raw:
@@ -171,16 +151,8 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
             config.codex.timeout_seconds = to_int(
                 codex_raw.get("timeoutSeconds"), config.codex.timeout_seconds, minimum=1
             )
-        if "timeoutMs" in codex_raw and "timeoutSeconds" not in codex_raw:
-            config.codex.timeout_seconds = to_int(
-                codex_raw.get("timeoutMs"), config.codex.timeout_seconds * 1000, minimum=1000
-            ) // 1000
         if "retries" in codex_raw:
             config.codex.retries = to_int(codex_raw.get("retries"), config.codex.retries, minimum=0)
-        if "reconnectingRounds" in codex_raw and "retries" not in codex_raw:
-            config.codex.retries = to_int(
-                codex_raw.get("reconnectingRounds"), config.codex.retries, minimum=0
-            )
         if "extraArgs" in codex_raw:
             extra_args = to_str_list(codex_raw.get("extraArgs"))
             if extra_args:

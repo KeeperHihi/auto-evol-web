@@ -42,12 +42,19 @@ def run_evolution(
     if iterations_override is not None:
         config.iterations = max(1, int(iterations_override))
 
-    if config.codex.auto_git_init:
-        log("[GIT] autoGitInit=true，启用自动仓库初始化流程")
-        workspace = prepare_workspace_with_auto_git_init(APP_ROOT, config)
-    else:
+    dry_run = dry_run_override or config.codex.dry_run
+    if dry_run:
         workspace = resolve_workspace(APP_ROOT, config.site_name)
         ensure_workspace_is_git_repo(workspace)
+        if config.codex.auto_git_init:
+            log("[GIT] dry-run 模式下跳过 autoGitInit，仅校验本地仓库状态")
+    else:
+        if config.codex.auto_git_init:
+            log("[GIT] autoGitInit=true，启用自动仓库初始化流程")
+            workspace = prepare_workspace_with_auto_git_init(APP_ROOT, config)
+        else:
+            workspace = resolve_workspace(APP_ROOT, config.site_name)
+            ensure_workspace_is_git_repo(workspace)
 
     system_prompt_path = resolve_local_path_from_root(
         APP_ROOT, config.system_prompt_file, "systemPromptFile"
@@ -57,7 +64,6 @@ def run_evolution(
 
     user_prompt = resolve_user_prompt(APP_ROOT, prompt_override, config)
 
-    dry_run = dry_run_override or config.codex.dry_run
     total_iterations = config.iterations
 
     log(f"[SYSTEM] 目标站点目录：{workspace}")
@@ -68,9 +74,12 @@ def run_evolution(
         raise ValueError("配置错误：autoGitPush=true 时必须同时设置 autoGitCommit=true")
 
     target_branch = normalize_branch_name(config.codex.git_branch)
-    ensure_branch_ready(workspace, target_branch)
-    if not dry_run and config.codex.auto_git_push:
-        ensure_remote_ready(workspace, config.codex.git_remote)
+    if dry_run:
+        log(f"[GIT] dry-run 模式下跳过分支切换与远端检查（目标分支：{target_branch}）")
+    else:
+        ensure_branch_ready(workspace, target_branch)
+        if config.codex.auto_git_push:
+            ensure_remote_ready(workspace, config.codex.git_remote)
 
     workspace_state = inspect_workspace_state(workspace)
     if workspace_state == "empty":

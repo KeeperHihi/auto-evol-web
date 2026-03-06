@@ -49,7 +49,7 @@ cp config.template.json config.json
 `config.json` 中要修改的字段：
 - `siteName` 你希望进化网站的仓库名。
 - `iterations` 你希望进化的迭代次数。
-- (可选) `llmAccess` 如果你希望进化过程中可以加入调用大模型的功能，请提供一个可调用的大模型配置，其中 `api-key` 会以环境变量的形式加载，无需担心泄漏问题。
+- (可选) `llmAccess` 如果你希望进化过程中可以加入调用大模型的功能，请提供一个可调用的大模型配置，其中 `apiKey` 会以环境变量的形式加载，无需担心泄漏问题。
 
 ### 2. 准备站点空仓库（若已登录 `gh` 并配置 `autoGitInit=True` 则可跳过本节）：
 
@@ -76,7 +76,7 @@ python evolution.py
 python evolution.py --iterations 10 # 传入迭代次数
 python evolution.py --site demo # 传入仓库名
 python evolution.py --prompt "做一个极简但高级的作品集网站" # 传入prompt，更推荐用 user-prompt.md 传输
-python evolution.py --dry-run # 不执行迭代，只校验流程是否能跑通
+python evolution.py --dry-run # 只做本地只读校验（不调用 Codex、不触发 autoGitInit、不切换分支、不做远端检查）
 ```
 
 ## 配置字段（`config.json`）
@@ -95,15 +95,14 @@ python evolution.py --dry-run # 不执行迭代，只校验流程是否能跑通
 - `codex.timeoutSeconds`：单轮超时秒数。
 - `codex.retries`：单轮失败重试次数。
 - `codex.extraArgs`：追加给 Codex 的参数。
-- `codex.dryRun`：仅演练，不调用 Codex。
+- `codex.dryRun`：仅做本地只读演练，不调用 Codex，不触发 autoGitInit，不切换分支，不做远端检查。
 - `codex.autoGitCommit`：每轮后是否自动提交。
 - `codex.autoGitPush`：每轮后是否自动推送。
 - `codex.gitRemote`：推送远端名，默认 `origin`。
 - `codex.gitBranch`：推送分支名，默认 `main`。
 - `codex.gitCommitPrefix`：提交信息前缀（可留空）。
-- `codex.autoGitInit`：自动初始化仓库机制。启用后若本地站点目录未绑定远端，会自动检测当前 GitHub 账号下是否有同名仓库；有则绑定并拉取，无则自动创建后绑定。
+- `codex.autoGitInit`：自动初始化仓库机制。启用后若本地站点目录未绑定远端，会自动检测当前 GitHub 账号下是否有同名仓库；有则绑定并拉取，无则自动创建后绑定。`dry-run` 模式下该流程不会执行。
 
 ## 版权声明
 
 本项目版权归 [KeeperHihi](https://github.com/KeeperHihi) 所有。
-

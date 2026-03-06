@@ -110,12 +110,28 @@ def resolve_workspace(app_root: Path, site_name: str) -> Path:
 
 
 def ensure_workspace_is_git_repo(workspace: Path) -> None:
-    check = run_git(workspace, ["rev-parse", "--is-inside-work-tree"])
-    if check.returncode != 0 or check.stdout.strip() != "true":
+    top_level = detect_repo_top_level(workspace)
+    resolved_workspace = workspace.resolve()
+    if top_level is None:
         raise RuntimeError(
-            f"{workspace} 不是 git 仓库。\n"
+            f"{workspace} 不是 git 仓库根目录。\n"
             "请先在该目录执行 git init，并按需配置远端。"
         )
+    if top_level != resolved_workspace:
+        raise RuntimeError(
+            f"{workspace} 不是独立 git 仓库（当前仓库根目录: {top_level}）。\n"
+            "请确保 webs/<siteName> 是独立仓库目录。"
+        )
+
+
+def detect_repo_top_level(workspace: Path) -> Path | None:
+    result = run_git(workspace, ["rev-parse", "--show-toplevel"], timeout_seconds=30)
+    if result.returncode != 0:
+        return None
+    output = (result.stdout or "").strip()
+    if not output:
+        return None
+    return Path(output).resolve()
 
 
 def workspace_has_any_files(workspace: Path) -> bool:
@@ -239,8 +255,15 @@ def prepare_workspace_with_auto_git_init(app_root: Path, config: AppConfig) -> P
     if not workspace.is_dir():
         raise RuntimeError(f"目标路径不是目录: {workspace}")
 
-    git_check = run_git(workspace, ["rev-parse", "--is-inside-work-tree"], timeout_seconds=30)
-    is_git_repo = git_check.returncode == 0 and (git_check.stdout or "").strip() == "true"
+    repo_top_level = detect_repo_top_level(workspace)
+    resolved_workspace = workspace.resolve()
+    if repo_top_level and repo_top_level != resolved_workspace:
+        raise RuntimeError(
+            f"{workspace} 位于另一个 git 仓库中（根目录: {repo_top_level}）。\n"
+            "为避免误操作，请更换 siteName 或将目标目录独立初始化为仓库。"
+        )
+
+    is_git_repo = repo_top_level == resolved_workspace
 
     if not is_git_repo:
         if workspace_has_any_files(workspace):
