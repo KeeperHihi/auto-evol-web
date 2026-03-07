@@ -20,6 +20,34 @@ from auto_evolution.models import AppConfig
 from auto_evolution.text_tools import extract_tail, sanitize_commit_message
 
 SESSION_ID_PATTERN = re.compile(r"session id:\s*([0-9a-f-]{36})", re.IGNORECASE)
+HANDOFF_FILE_PATTERN = re.compile(
+    r"^\s*HANDOFF_FILE\s*[:：]\s*(.+)$", re.IGNORECASE | re.MULTILINE
+)
+WORK_SUMMARY_PATTERNS = [
+    re.compile(r"^\s*WORK_SUMMARY\s*[:：]\s*(.+)$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*SUMMARY\s*[:：]\s*(.+)$", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*工作摘要\s*[:：]\s*(.+)$", re.IGNORECASE | re.MULTILINE),
+]
+
+
+def extract_codex_content_lines(output: str) -> list[str]:
+    state = CodexStreamState()
+    lines: list[str] = []
+    for raw_line in str(output or "").splitlines():
+        tagged = classify_codex_stream_line(raw_line, "stdout", state)
+        if not tagged or "] " not in tagged:
+            continue
+        _, body = tagged.split("] ", 1)
+        text = body.strip()
+        if not text:
+            continue
+        if (
+            tagged.startswith("[CODEX-RESP]")
+            or tagged.startswith("[CODEX-EXEC]")
+            or tagged.startswith("[CODEX-STDOUT]")
+        ):
+            lines.append(text)
+    return lines
 
 
 def _resolve_command_on_windows(command: str) -> str:
@@ -61,6 +89,7 @@ def extract_session_id(text: str) -> str:
 
 
 def extract_codex_commit_message(output: str) -> str:
+    searchable_text = "\n".join(extract_codex_content_lines(output))
     patterns = [
         re.compile(r"^\s*COMMIT_MESSAGE\s*[:：]\s*(.+)$", re.IGNORECASE | re.MULTILINE),
         re.compile(r"^\s*提交信息\s*[:：]\s*(.+)$", re.IGNORECASE | re.MULTILINE),
@@ -68,7 +97,7 @@ def extract_codex_commit_message(output: str) -> str:
     ]
 
     for pattern in patterns:
-        match = pattern.search(output or "")
+        match = pattern.search(searchable_text)
         if not match:
             continue
         normalized = sanitize_commit_message(match.group(1))
@@ -76,6 +105,65 @@ def extract_codex_commit_message(output: str) -> str:
             return normalized
 
     return ""
+
+
+def extract_work_summary(output: str) -> str:
+    searchable_text = "\n".join(extract_codex_content_lines(output))
+    for pattern in WORK_SUMMARY_PATTERNS:
+        match = pattern.search(searchable_text)
+        if not match:
+            continue
+        summary = re.sub(r"\s+", " ", str(match.group(1) or "").strip())
+        if summary:
+            return extract_tail(summary, 320)
+    return ""
+
+
+def extract_handoff_files(output: str) -> list[str]:
+    searchable_text = "\n".join(extract_codex_content_lines(output))
+    candidates: list[str] = []
+    for match in HANDOFF_FILE_PATTERN.findall(searchable_text):
+        value = str(match or "").strip()
+        if value:
+            candidates.append(value)
+    # Keep order and remove duplicates.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in candidates:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def extract_codex_response_tail(output: str, max_length: int = 2000) -> str:
+    state = CodexStreamState()
+    preferred_lines: list[str] = []
+    fallback_lines: list[str] = []
+
+    for raw_line in str(output or "").splitlines():
+        tagged = classify_codex_stream_line(raw_line, "stdout", state)
+        if not tagged:
+            continue
+
+        if "] " not in tagged:
+            continue
+        _, body = tagged.split("] ", 1)
+        text = body.strip()
+        if not text:
+            continue
+
+        if tagged.startswith("[CODEX-RESP]") or tagged.startswith("[CODEX-EXEC]"):
+            preferred_lines.append(text)
+        elif tagged.startswith("[CODEX-STDOUT]"):
+            fallback_lines.append(text)
+
+    if preferred_lines:
+        return extract_tail("\n".join(preferred_lines), max_length)
+    if fallback_lines:
+        return extract_tail("\n".join(fallback_lines), max_length)
+    return extract_tail(output, max_length)
 
 
 def build_codex_args(config: AppConfig, workspace: Path, resume_session_id: str) -> list[str]:
@@ -232,7 +320,8 @@ def run_codex_iteration(
     workspace: Path,
     prompt: str,
     incoming_session_id: str,
-) -> tuple[str, str, str]:
+    require_work_summary: bool = False,
+) -> tuple[str, str, str, str, list[str]]:
     command = resolve_codex_command(config.codex.command)
     timeout_seconds = config.codex.timeout_seconds
     retries = config.codex.retries
@@ -280,8 +369,22 @@ def run_codex_iteration(
             session_id = observed
 
         commit_message = extract_codex_commit_message(combined)
+        work_summary = extract_work_summary(combined)
+        handoff_files = extract_handoff_files(combined)
         if return_code == 0:
-            return session_id, extract_tail(combined), commit_message
+            if not work_summary:
+                work_summary = extract_tail(extract_codex_response_tail(combined, max_length=800), 320)
+                if require_work_summary:
+                    log(
+                        "[WARN] 未检测到 `WORK_SUMMARY` 字段，已回退到响应摘要截断；建议在角色输出中补齐该字段"
+                    )
+            return (
+                session_id,
+                extract_codex_response_tail(combined),
+                commit_message,
+                work_summary,
+                handoff_files,
+            )
 
         if attempt >= retries:
             raise RuntimeError(

@@ -8,6 +8,42 @@ DEFAULT_USER_PROMPT_FILE = "prompts/user-prompt.md"
 
 
 @dataclass
+class AgentSpec:
+    name: str
+    role: str
+    goal: str
+    can_edit_code: bool = True
+    system_prompt_file: str = ""
+    system_prompt: str = ""
+
+
+def default_multi_agent_specs() -> list[AgentSpec]:
+    return [
+        AgentSpec(
+            name="innovation_analyst",
+            role="Innovation Analyst",
+            goal="Read source code deeply, focus on user requirement, and propose high-value innovative improvements.",
+            can_edit_code=False,
+            system_prompt_file="prompts/roles/architect.zh.md",
+        ),
+        AgentSpec(
+            name="implementation_engineer",
+            role="Implementation Engineer",
+            goal="Implement production-ready code according to design and task decomposition.",
+            can_edit_code=True,
+            system_prompt_file="prompts/roles/engineer.zh.md",
+        ),
+        AgentSpec(
+            name="verification_repair_engineer",
+            role="Verification & Repair Engineer",
+            goal="Read source code carefully, test functionality and vulnerabilities, then fix discovered issues.",
+            can_edit_code=True,
+            system_prompt_file="prompts/roles/qa_engineer.zh.md",
+        ),
+    ]
+
+
+@dataclass
 class LlmAccessConfig:
     url: str = ""
     api_key: str = ""
@@ -35,6 +71,13 @@ class CodexConfig:
 
 
 @dataclass
+class MultiAgentConfig:
+    enabled: bool = True
+    max_context_chars: int = 2800
+    agents: list[AgentSpec] = field(default_factory=default_multi_agent_specs)
+
+
+@dataclass
 class AppConfig:
     project_name: str = "demo"
     need_auto_upgrade: bool = True
@@ -44,4 +87,5 @@ class AppConfig:
     system_prompt_file: str = DEFAULT_SYSTEM_PROMPT_FILE
     user_prompt_file: str = DEFAULT_USER_PROMPT_FILE
     llm_access: LlmAccessConfig = field(default_factory=LlmAccessConfig)
+    multi_agent: MultiAgentConfig = field(default_factory=MultiAgentConfig)
     codex: CodexConfig = field(default_factory=CodexConfig)

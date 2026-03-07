@@ -3,7 +3,11 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 ANSI_RESET = "\x1b[0m"
 TAG_COLOR_MAP = {
@@ -34,6 +38,10 @@ CODEX_META_LINE_REGEXP = re.compile(
     r"^(workdir|model|provider|approval|sandbox|session id|reasoning effort|reasoning summaries):",
     re.IGNORECASE,
 )
+LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
+_LOG_FILE_LOCK = threading.Lock()
+_SCOPE_LOCK = threading.Lock()
+_CURRENT_SCOPE = "SYSTEM"
 
 
 @dataclass
@@ -46,6 +54,32 @@ class TaggedMessage:
 @dataclass
 class CodexStreamState:
     phase: str = ""
+
+
+def _normalize_scope(scope: str) -> str:
+    candidate = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(scope or "").strip()).strip("_")
+    if not candidate:
+        return "SYSTEM"
+    return candidate.upper()[:48]
+
+
+@contextmanager
+def log_scope(scope: str):
+    global _CURRENT_SCOPE
+    normalized = _normalize_scope(scope)
+    with _SCOPE_LOCK:
+        previous = _CURRENT_SCOPE
+        _CURRENT_SCOPE = normalized
+    try:
+        yield
+    finally:
+        with _SCOPE_LOCK:
+            _CURRENT_SCOPE = previous
+
+
+def get_current_scope() -> str:
+    with _SCOPE_LOCK:
+        return _CURRENT_SCOPE
 
 
 def _supports_ansi_color(stream: object) -> bool:
@@ -66,10 +100,11 @@ def parse_tagged_message(raw_message: str) -> TaggedMessage:
     return TaggedMessage(has_tag=True, tag=match.group(1), body=match.group(2) or "")
 
 
-def format_auto_evolve_console_line(message: str, use_stderr: bool = False) -> str:
+def format_auto_evolve_console_line(message: str, use_stderr: bool = False, scope: str | None = None) -> str:
     stream = sys.stderr if use_stderr else sys.stdout
     parsed = parse_tagged_message(message)
-    prefix = _colorize("[AUTO-EVOLVE]", "\x1b[1;36m", stream)
+    resolved_scope = _normalize_scope(scope or get_current_scope())
+    prefix = _colorize(f"[AE:{resolved_scope}]", "\x1b[1;36m", stream)
 
     if not parsed.has_tag:
         return f"{prefix} {parsed.body}"
@@ -79,12 +114,34 @@ def format_auto_evolve_console_line(message: str, use_stderr: bool = False) -> s
     return f"{prefix} {colored_tag} {parsed.body}"
 
 
+def format_auto_evolve_plain_line(message: str, scope: str | None = None) -> str:
+    parsed = parse_tagged_message(message)
+    resolved_scope = _normalize_scope(scope or get_current_scope())
+    prefix = f"[AE:{resolved_scope}]"
+    if not parsed.has_tag:
+        return f"{prefix} {parsed.body}"
+    return f"{prefix} [{parsed.tag}] {parsed.body}"
+
+
+def _append_local_log(line: str) -> None:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    logfile = LOGS_DIR / f"auto-evolution-{datetime.now().strftime('%Y%m%d')}.log"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _LOG_FILE_LOCK:
+        with logfile.open("a", encoding="utf-8") as file:
+            file.write(f"{timestamp} {line}\n")
+
+
 def log(message: str) -> None:
-    print(format_auto_evolve_console_line(message))
+    scope = get_current_scope()
+    print(format_auto_evolve_console_line(message, scope=scope))
+    _append_local_log(format_auto_evolve_plain_line(message, scope=scope))
 
 
 def log_error(message: str) -> None:
-    print(format_auto_evolve_console_line(message, use_stderr=True), file=sys.stderr)
+    scope = get_current_scope()
+    print(format_auto_evolve_console_line(message, use_stderr=True, scope=scope), file=sys.stderr)
+    _append_local_log(format_auto_evolve_plain_line(message, scope=scope))
 
 
 def classify_codex_stream_line(line: str, source: str, state: CodexStreamState) -> str | None:

@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 prompts/sys-prompt.md
 prompts/user-prompt.md
+logs/

@@ -9,7 +9,12 @@
 
 - `projects` 下的每个子目录都是一个独立项目仓库，形如 `projects/<projectName>`。
 - 你可以从空仓库开始，只提供一句创意 `idea` 逐轮进化。
-- 每轮迭代后，脚本会在该子仓库内自动推送到远程仓库。
+- 默认使用 `multi-agent` 串行协作，每轮按 3 角色流水线推进：
+  - `Innovation Analyst`：读源码并提出创新改进方案
+  - `Implementation Engineer`：实施改动
+  - `Verification & Repair Engineer`：测试、发现问题并修复
+- 所有 Agent 都统一使用同一个 `codex` CLI 和 `codex.model`，不依赖其他模型供应商。
+- 每轮迭代结束后，脚本会在该子仓库内自动提交并推送（可通过配置关闭）。
 
 ## 代码结构
 
@@ -27,7 +32,7 @@
 - `python`，基础环境即可
 - `git`，保证本机的 `user.name` 和 `user.email` 字段配置正确，且可以免密操作
 - 本机必须配置好 `codex CLI`
-- （非常建议）安装 `gh` 并登录：`gh auth login`，便于自动化创建 `GitHub` 仓库，[下载链接](https://cli.github.com/)
+- （非常建议）安装 `gh` 并登录：`gh auth login`，便于自动化创建 `GitHub` 仓库，[安装链接](https://cli.github.com/)
 
 ## 快速开始
 
@@ -49,6 +54,7 @@ cp config.template.json config.json
 
 - `projectName`: 你希望进化的项目仓库名。
 - `iterations`: 你希望进化的迭代次数。
+- `multiAgent.enabled`: 是否启用多 Agent 协作（默认 `true`）。
 - (推荐) `autoGitInit`: 是否愿意自动化创建仓库（默认为 `false`，必须 `gh` 登录才能为 `true`，建议改为 `true`）
 - (可选) `llmAccess`: 如果你希望进化过程中可以加入调用大模型的功能，请提供一个可调用的大模型配置，其中 `apiKey` 会以环境变量的形式加载，无需担心泄漏问题。
 - (可选) `needAutoUpgrade`: 是否在每次启动时自动检查并拉取当前框架仓库更新（默认 `true`）,若你希望修改代码，可设置此参数为 `false`。
@@ -74,7 +80,8 @@ cp prompts/sys-prompt.template.md prompts/sys-prompt.md
 cp prompts/user-prompt.template.md prompts/user-prompt.md
 ```
 
-可以改写 `prompts/sys-prompt.md` 更加适配你的需求，当前模板是通用项目提示词。
+可以改写 `prompts/sys-prompt.md` 更加适配你的需求，当前模板是通用系统规则。
+默认多 Agent 角色提示词位于 `prompts/roles/*.zh.md`。
 
 记得填写你的创意 `idea` 到 `prompts/user-prompt.md`。
 
@@ -105,6 +112,16 @@ python evolution.py --dry-run # 测试本地流程是否能跑通
 - `systemPromptFile`：系统提示词路径。
 - `userPromptFile`：你创意提示词路径。
 - `llmAccess`：（可选）提供给 `codex` 的大模型调用接口。
+- `multiAgent.enabled`：是否启用多 Agent 协作流程。
+- `multiAgent.maxContextChars`：多 Agent 协作记忆的截断长度（避免上下文无限增长）。
+- `multiAgent.agents`：角色列表，每项包含：
+  - `name`：角色唯一标识（会话复用 key）。
+  - `role`：角色名称，用于提示词角色卡。
+  - `goal`：角色目标，定义该角色在流水线中的职责。
+  - `canEditCode`：该角色是否允许直接改代码。
+  - `systemPromptFile`：（可选）角色系统提示词文件路径（建议放在 `prompts/roles/`）。
+- 只读角色可使用项目临时交接目录：`.git/auto-evolution-handoffs/iter-xxx/`，通过 `HANDOFF_FILE: <path>` 传递分析结论。
+- 运行日志会落盘到框架目录 `./logs/`。
 - `codex.command`：Codex 命令名。
 - `codex.model`：Codex 模型参数。
 - `codex.profile`：（可选）profile。

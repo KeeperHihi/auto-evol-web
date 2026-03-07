@@ -11,6 +11,33 @@
     "apiKey": "",
     "model": ""
   },
+  "multiAgent": {
+    "enabled": true,
+    "maxContextChars": 2800,
+    "agents": [
+      {
+        "name": "innovation_analyst",
+        "role": "Innovation Analyst",
+        "goal": "Read source code deeply, focus on user requirement, and propose high-value innovative improvements.",
+        "canEditCode": false,
+        "systemPromptFile": "prompts/roles/architect.zh.md"
+      },
+      {
+        "name": "implementation_engineer",
+        "role": "Implementation Engineer",
+        "goal": "Implement production-ready code according to design and task decomposition.",
+        "canEditCode": true,
+        "systemPromptFile": "prompts/roles/engineer.zh.md"
+      },
+      {
+        "name": "verification_repair_engineer",
+        "role": "Verification & Repair Engineer",
+        "goal": "Read source code carefully, test functionality and vulnerabilities, then fix discovered issues.",
+        "canEditCode": true,
+        "systemPromptFile": "prompts/roles/qa_engineer.zh.md"
+      }
+    ]
+  },
   "codex": {
     "command": "codex",
     "model": "gpt-5.3-codex-xhigh",

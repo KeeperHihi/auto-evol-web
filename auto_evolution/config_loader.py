@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
-from auto_evolution.models import AppConfig
+from auto_evolution.models import AppConfig, AgentSpec, default_multi_agent_specs
 
 
 def strip_json_comments(content: str) -> str:
@@ -110,10 +111,55 @@ def normalize_branch_name(branch_name: str) -> str:
     return str(branch_name or "").strip().replace("refs/heads/", "")
 
 
+def normalize_agent_name(name: str, index: int) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9_-]+", "_", str(name or "").strip().lower()).strip("_")
+    return normalized or f"agent_{index}"
+
+
+def normalize_agent_specs(value: Any) -> list[AgentSpec]:
+    defaults = default_multi_agent_specs()
+    if not isinstance(value, list):
+        return defaults
+
+    normalized: list[AgentSpec] = []
+    used_names: set[str] = set()
+
+    for index, item in enumerate(value, start=1):
+        if not isinstance(item, dict):
+            continue
+
+        candidate = normalize_agent_name(item.get("name"), index)
+        name = candidate
+        dedup_index = 2
+        while name in used_names:
+            name = f"{candidate}_{dedup_index}"
+            dedup_index += 1
+
+        role = to_str(item.get("role"))
+        goal = to_str(item.get("goal"))
+        if not role or not goal:
+            continue
+
+        normalized.append(
+            AgentSpec(
+                name=name,
+                role=role,
+                goal=goal,
+                can_edit_code=to_bool(item.get("canEditCode"), True),
+                system_prompt_file=to_str(item.get("systemPromptFile")),
+                system_prompt=to_str(item.get("systemPrompt")),
+            )
+        )
+        used_names.add(name)
+
+    return normalized or defaults
+
+
 def normalize_config(raw: dict[str, Any]) -> AppConfig:
     config = AppConfig()
 
     llm_access_raw = raw.get("llmAccess", {}) if isinstance(raw.get("llmAccess"), dict) else {}
+    multi_agent_raw = raw.get("multiAgent", {}) if isinstance(raw.get("multiAgent"), dict) else {}
     codex_raw = raw.get("codex", {}) if isinstance(raw.get("codex"), dict) else {}
 
     if "projectName" in raw:
@@ -137,6 +183,20 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
         config.llm_access.url = to_str(llm_access_raw.get("url"), config.llm_access.url)
         config.llm_access.api_key = to_str(llm_access_raw.get("apiKey"), config.llm_access.api_key)
         config.llm_access.model = to_str(llm_access_raw.get("model"), config.llm_access.model)
+
+    if multi_agent_raw:
+        if "enabled" in multi_agent_raw:
+            config.multi_agent.enabled = to_bool(
+                multi_agent_raw.get("enabled"), config.multi_agent.enabled
+            )
+        if "maxContextChars" in multi_agent_raw:
+            config.multi_agent.max_context_chars = to_int(
+                multi_agent_raw.get("maxContextChars"),
+                config.multi_agent.max_context_chars,
+                minimum=800,
+            )
+        if "agents" in multi_agent_raw:
+            config.multi_agent.agents = normalize_agent_specs(multi_agent_raw.get("agents"))
 
     if codex_raw:
         if "command" in codex_raw:
@@ -185,6 +245,9 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
     config.codex.retries = max(0, config.codex.retries)
     config.codex.git_remote = config.codex.git_remote.strip() or "origin"
     config.codex.git_branch = normalize_branch_name(config.codex.git_branch) or "main"
+    config.multi_agent.max_context_chars = max(800, config.multi_agent.max_context_chars)
+    if not config.multi_agent.agents:
+        config.multi_agent.agents = default_multi_agent_specs()
 
     if not config.project_name:
         raise ValueError("projectName 不能为空")
