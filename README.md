@@ -1,4 +1,4 @@
-# Auto-Evolution-Project ---- Idea Is All You Need!
+# Auto-Evolution-Project ---- Idea is all you need!
 
 `Codex` 驱动的自进化项目框架
 
@@ -83,7 +83,7 @@ git remote add origin <你的空仓库地址>
 
 记得填写你的创意 `idea` 到 `prompts/user-prompt.md`。
 如果你在迭代中途有新想法 / 新问题，可随时写入 `prompts/user-temp-prompt.md`，系统会在每轮开始时按最高优先级处理：第 1 角色先重构成编号条目，第 3 角色删除已完成条目并保留未完成条目。
-若你没有在根目录创建这些文件，程序会读取 `.template/` 中的默认内容；但要保留你自己的修改，建议始终维护根目录文件。
+若你没有在根目录创建这些文件，程序会读取 `.template/` 中的默认内容，建议始终维护根目录文件。
 
 ### 4. 启动进化
 
@@ -104,7 +104,7 @@ python evolution.py --dry-run # 测试本地流程是否能跑通
 
 中断说明：
 - 运行中按 `Ctrl+C` 会中断当前 Codex 执行。
-- 脚本会检测当前子仓库是否存在未提交改动；若存在会自动回滚这些未完成改动，然后正常退出。
+- 脚本会检测当前子仓库是否存在未提交改动，若存在会自动回滚这些未完成改动，然后正常退出。
 
 ## 配置字段（`config.json`）
 
