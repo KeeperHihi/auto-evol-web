@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +9,7 @@ from auto_evolution.codex_runner import run_codex_iteration
 from auto_evolution.config_loader import (
     load_config,
     normalize_branch_name,
-    resolve_local_path_from_root,
+    resolve_local_path_with_template_fallback,
 )
 from auto_evolution.git_tools import (
     commit_and_push_changes,
@@ -29,10 +30,17 @@ from auto_evolution.prompt_tools import (
     build_multi_agent_prompt,
     hydrate_agent_system_prompts,
     read_text_file,
+    read_user_temp_prompt,
     render_system_prompt,
     resolve_user_prompt,
 )
 from auto_evolution.text_tools import extract_tail
+
+TEMP_PROMPT_DONE_IDS_PATTERN = re.compile(
+    r"^\s*TEMP_PROMPT_DONE_IDS\s*[:：]\s*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
+)
+TEMP_PROMPT_ITEM_PATTERN = re.compile(r"(?m)^[ \t]*(\d+)[\.\)\）、]\s+")
 
 
 @dataclass
@@ -43,6 +51,12 @@ class AgentTurnResult:
     output_tail: str
     commit_message: str
     handoff_files: list[str]
+
+
+class EvolutionInterrupted(RuntimeError):
+    def __init__(self, workspace: Path | None):
+        super().__init__("检测到用户中断（Ctrl+C）")
+        self.workspace = workspace
 
 
 def get_handoff_root(workspace: Path, iteration: int) -> Path:
@@ -92,6 +106,73 @@ def summarize_multi_agent_results(
             lines.append(f"HANDOFF_FILE: {handoff_file}")
 
     return extract_tail("\n".join(lines), max_context_chars)
+
+
+def extract_temp_prompt_done_ids(output_tail: str) -> list[int]:
+    match = TEMP_PROMPT_DONE_IDS_PATTERN.search(str(output_tail or ""))
+    if not match:
+        return []
+
+    value = str(match.group(1) or "").strip()
+    if not value:
+        return []
+    if value.upper() in {"NONE", "N/A", "NA"} or value in {"无", "无完成项", "没有"}:
+        return []
+
+    ids: list[int] = []
+    seen: set[int] = set()
+    for token in re.split(r"[,\s，、]+", value):
+        if not token:
+            continue
+        if not token.isdigit():
+            continue
+        number = int(token)
+        if number <= 0 or number in seen:
+            continue
+        seen.add(number)
+        ids.append(number)
+    return ids
+
+
+def prune_user_temp_prompt_completed_items(path: Path, done_ids: list[int]) -> tuple[int, int]:
+    if not done_ids:
+        return 0, 0
+    if not path.exists():
+        return 0, 0
+
+    raw_text = path.read_text(encoding="utf-8")
+    matches = list(TEMP_PROMPT_ITEM_PATTERN.finditer(raw_text))
+    if not matches:
+        return 0, 0
+
+    done_set = {item for item in done_ids if item > 0}
+    if not done_set:
+        return 0, len(matches)
+
+    prefix = raw_text[: matches[0].start()]
+    kept_blocks: list[str] = []
+    removed_count = 0
+    remaining_count = 0
+
+    for idx, match in enumerate(matches):
+        start = match.start()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw_text)
+        block = raw_text[start:end]
+        item_id = int(match.group(1))
+        if item_id in done_set:
+            removed_count += 1
+            continue
+        kept_blocks.append(block)
+        remaining_count += 1
+
+    if removed_count <= 0:
+        return 0, len(matches)
+
+    new_text = ""
+    if kept_blocks:
+        new_text = prefix + "".join(kept_blocks)
+    path.write_text(new_text, encoding="utf-8")
+    return removed_count, remaining_count
 
 
 def run_single_agent_round(
@@ -146,6 +227,8 @@ def run_multi_agent_round(
     config: AppConfig,
     workspace: Path,
     agent_session_ids: dict[str, str],
+    user_temp_prompt: str,
+    user_temp_prompt_path: Path,
 ) -> tuple[str, str]:
     total_agents = len(config.multi_agent.agents)
     turn_results: list[AgentTurnResult] = []
@@ -155,6 +238,15 @@ def run_multi_agent_round(
         handoff_root.mkdir(parents=True, exist_ok=True)
 
     for index, agent in enumerate(config.multi_agent.agents, start=1):
+        current_user_temp_prompt = (
+            read_text_file(
+                user_temp_prompt_path,
+                "userTempPromptFile",
+                allow_empty=True,
+            )
+            if user_temp_prompt_path.exists()
+            else user_temp_prompt
+        )
         previous_handoff_files = [
             filename for result in turn_results for filename in result.handoff_files
         ]
@@ -178,6 +270,8 @@ def run_multi_agent_round(
             handoff_root=handoff_root,
             suggested_handoff_file=suggested_handoff_file,
             require_commit_message=agent.can_edit_code and index == total_agents,
+            user_temp_prompt=current_user_temp_prompt,
+            user_temp_prompt_path=user_temp_prompt_path,
         )
         with log_scope(agent.name):
             log(f"[AUTO] Agent {index}/{total_agents} 开始：{agent.name} ({agent.role})")
@@ -230,6 +324,25 @@ def run_multi_agent_round(
             )
             if handoff_files:
                 log(f"[AUTO] Agent {agent.name} 已产出交接文档：{', '.join(handoff_files)}")
+
+            if current_user_temp_prompt.strip() and index == total_agents:
+                done_ids = extract_temp_prompt_done_ids(output_tail)
+                if not done_ids:
+                    log("[WARN] 第三角色未给出已完成条目编号，临时需求文件保持不变")
+                else:
+                    removed_count, remaining_count = prune_user_temp_prompt_completed_items(
+                        user_temp_prompt_path,
+                        done_ids,
+                    )
+                    if removed_count > 0:
+                        log(
+                            "[AUTO] 第三角色已移除临时需求完成条目："
+                            f"{done_ids}；剩余 {remaining_count} 条"
+                        )
+                    else:
+                        log(
+                            "[WARN] 第三角色给出的完成编号未匹配到有效条目，临时需求文件保持不变"
+                        )
             log(f"[AUTO] Agent {agent.name} 完成")
 
     return (
@@ -244,120 +357,130 @@ def run_evolution(
     prompt_override: str | None,
     dry_run_override: bool,
 ) -> int:
-    config = load_config(CONFIG_FILE)
-    if config.need_auto_upgrade:
-        ensure_project_is_latest(APP_ROOT, remote_name="origin", branch_name="main")
-    else:
-        log("[GIT] needAutoUpgrade=false，跳过框架仓库更新检查")
-
-    if project_override:
-        config.project_name = project_override.strip()
-    if iterations_override is not None:
-        config.iterations = max(1, int(iterations_override))
-
-    dry_run = dry_run_override or config.codex.dry_run
-    if dry_run:
-        workspace = resolve_workspace(APP_ROOT, config.project_name)
-        ensure_workspace_is_git_repo(workspace)
-        if config.codex.auto_git_init:
-            log("[GIT] dry-run 模式下跳过 autoGitInit，仅校验本地仓库状态")
-    else:
-        if config.codex.auto_git_init:
-            log("[GIT] autoGitInit=true，启用自动仓库初始化流程")
-            workspace = prepare_workspace_with_auto_git_init(APP_ROOT, config)
+    workspace: Path | None = None
+    try:
+        config = load_config(CONFIG_FILE)
+        if config.need_auto_upgrade:
+            ensure_project_is_latest(APP_ROOT, remote_name="origin", branch_name="main")
         else:
+            log("[GIT] needAutoUpgrade=false，跳过框架仓库更新检查")
+
+        if project_override:
+            config.project_name = project_override.strip()
+        if iterations_override is not None:
+            config.iterations = max(1, int(iterations_override))
+
+        dry_run = dry_run_override or config.codex.dry_run
+        if dry_run:
             workspace = resolve_workspace(APP_ROOT, config.project_name)
             ensure_workspace_is_git_repo(workspace)
-
-    system_prompt_path = resolve_local_path_from_root(
-        APP_ROOT, config.system_prompt_file, "systemPromptFile"
-    )
-    system_prompt_template = read_text_file(system_prompt_path, "systemPromptFile")
-    system_prompt = render_system_prompt(system_prompt_template, config.llm_access)
-
-    user_prompt = resolve_user_prompt(APP_ROOT, prompt_override, config)
-    hydrate_agent_system_prompts(APP_ROOT, config)
-
-    total_iterations = config.iterations
-
-    log(f"[SYSTEM] 目标项目仓库目录：{workspace}")
-    log(f"[SYSTEM] 迭代轮次：{total_iterations}")
-    log(f"[SYSTEM] 演练模式：{dry_run}")
-    if config.multi_agent.enabled and config.multi_agent.agents:
-        log(f"[SYSTEM] 执行模式：multi-agent（{len(config.multi_agent.agents)} 个角色）")
-    else:
-        log("[SYSTEM] 执行模式：single-agent")
-
-    if config.codex.auto_git_push and not config.codex.auto_git_commit:
-        raise ValueError("配置错误：autoGitPush=true 时必须同时设置 autoGitCommit=true")
-
-    target_branch = normalize_branch_name(config.codex.git_branch)
-    if dry_run:
-        log(f"[GIT] dry-run 模式下跳过分支切换与远端检查（目标分支：{target_branch}）")
-    else:
-        ensure_branch_ready(workspace, target_branch)
-        if config.codex.auto_git_push:
-            ensure_remote_ready(workspace, config.codex.git_remote)
-
-    workspace_state = inspect_workspace_state(workspace)
-    if workspace_state == "empty":
-        log("[SYSTEM] 检测到空仓库，将从 0 开始生成项目")
-    else:
-        log("[SYSTEM] 检测到仓库已有内容，将在现有基础上继续进化")
-
-    previous_tail = ""
-    single_agent_session_id = ""
-    agent_session_ids: dict[str, str] = {}
-    use_multi_agent = bool(config.multi_agent.enabled and config.multi_agent.agents)
-
-    for iteration in range(1, total_iterations + 1):
-        log(f"[AUTO] 第 {iteration}/{total_iterations} 轮开始")
-        codex_commit_message = ""
-
-        if use_multi_agent:
-            previous_tail, codex_commit_message = run_multi_agent_round(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                iteration=iteration,
-                total_iterations=total_iterations,
-                previous_tail=previous_tail,
-                append_iteration_context=config.append_iteration_context,
-                dry_run=dry_run,
-                config=config,
-                workspace=workspace,
-                agent_session_ids=agent_session_ids,
-            )
+            if config.codex.auto_git_init:
+                log("[GIT] dry-run 模式下跳过 autoGitInit，仅校验本地仓库状态")
         else:
-            single_agent_session_id, previous_tail, codex_commit_message = run_single_agent_round(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                iteration=iteration,
-                total_iterations=total_iterations,
-                previous_tail=previous_tail,
-                append_iteration_context=config.append_iteration_context,
-                dry_run=dry_run,
-                config=config,
-                workspace=workspace,
-                resume_session_id=single_agent_session_id,
-            )
+            if config.codex.auto_git_init:
+                log("[GIT] autoGitInit=true，启用自动仓库初始化流程")
+                workspace = prepare_workspace_with_auto_git_init(APP_ROOT, config)
+            else:
+                workspace = resolve_workspace(APP_ROOT, config.project_name)
+                ensure_workspace_is_git_repo(workspace)
 
-        if not dry_run:
-            commit_and_push_changes(
-                config=config,
-                workspace=workspace,
-                codex_message=codex_commit_message,
-                iteration=iteration,
-            )
+        system_prompt_path = resolve_local_path_with_template_fallback(
+            APP_ROOT, config.system_prompt_file, "systemPromptFile"
+        )
+        system_prompt_template = read_text_file(system_prompt_path, "systemPromptFile")
+        system_prompt = render_system_prompt(system_prompt_template, config.llm_access)
 
-        changed_count = count_changed_files(workspace)
-        if changed_count >= 0:
-            log(f"[AUTO] 第 {iteration} 轮完成，当前仓库未提交文件数：{changed_count}")
+        user_prompt = resolve_user_prompt(APP_ROOT, prompt_override, config)
+        user_temp_prompt_path, _ = read_user_temp_prompt(APP_ROOT)
+        hydrate_agent_system_prompts(APP_ROOT, config)
+
+        total_iterations = config.iterations
+
+        log(f"[SYSTEM] 目标项目仓库目录：{workspace}")
+        log(f"[SYSTEM] 迭代轮次：{total_iterations}")
+        log(f"[SYSTEM] 演练模式：{dry_run}")
+        if config.multi_agent.enabled and config.multi_agent.agents:
+            log(f"[SYSTEM] 执行模式：multi-agent（{len(config.multi_agent.agents)} 个角色）")
         else:
-            log(f"[AUTO] 第 {iteration} 轮完成")
+            log("[SYSTEM] 执行模式：single-agent")
 
-        if iteration < total_iterations and config.interval_seconds > 0:
-            log(f"[AUTO] 等待 {config.interval_seconds} 秒后进入下一轮")
-            time.sleep(config.interval_seconds)
+        if config.codex.auto_git_push and not config.codex.auto_git_commit:
+            raise ValueError("配置错误：autoGitPush=true 时必须同时设置 autoGitCommit=true")
 
-    log(f"[SYSTEM] 进化结束，共执行 {total_iterations} 轮")
-    return 0
+        target_branch = normalize_branch_name(config.codex.git_branch)
+        if dry_run:
+            log(f"[GIT] dry-run 模式下跳过分支切换与远端检查（目标分支：{target_branch}）")
+        else:
+            ensure_branch_ready(workspace, target_branch)
+            if config.codex.auto_git_push:
+                ensure_remote_ready(workspace, config.codex.git_remote)
+
+        workspace_state = inspect_workspace_state(workspace)
+        if workspace_state == "empty":
+            log("[SYSTEM] 检测到空仓库，将从 0 开始生成项目")
+        else:
+            log("[SYSTEM] 检测到仓库已有内容，将在现有基础上继续进化")
+
+        previous_tail = ""
+        single_agent_session_id = ""
+        agent_session_ids: dict[str, str] = {}
+        use_multi_agent = bool(config.multi_agent.enabled and config.multi_agent.agents)
+
+        for iteration in range(1, total_iterations + 1):
+            _, user_temp_prompt = read_user_temp_prompt(APP_ROOT)
+            log(f"[AUTO] 第 {iteration}/{total_iterations} 轮开始")
+            if use_multi_agent and user_temp_prompt.strip():
+                log("[AUTO] 检测到 user-temp-prompt.md 非空：本轮将以最高优先级处理临时需求")
+            codex_commit_message = ""
+
+            if use_multi_agent:
+                previous_tail, codex_commit_message = run_multi_agent_round(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    iteration=iteration,
+                    total_iterations=total_iterations,
+                    previous_tail=previous_tail,
+                    append_iteration_context=config.append_iteration_context,
+                    dry_run=dry_run,
+                    config=config,
+                    workspace=workspace,
+                    agent_session_ids=agent_session_ids,
+                    user_temp_prompt=user_temp_prompt,
+                    user_temp_prompt_path=user_temp_prompt_path,
+                )
+            else:
+                single_agent_session_id, previous_tail, codex_commit_message = run_single_agent_round(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    iteration=iteration,
+                    total_iterations=total_iterations,
+                    previous_tail=previous_tail,
+                    append_iteration_context=config.append_iteration_context,
+                    dry_run=dry_run,
+                    config=config,
+                    workspace=workspace,
+                    resume_session_id=single_agent_session_id,
+                )
+
+            if not dry_run:
+                commit_and_push_changes(
+                    config=config,
+                    workspace=workspace,
+                    codex_message=codex_commit_message,
+                    iteration=iteration,
+                )
+
+            changed_count = count_changed_files(workspace)
+            if changed_count >= 0:
+                log(f"[AUTO] 第 {iteration} 轮完成，当前仓库未提交文件数：{changed_count}")
+            else:
+                log(f"[AUTO] 第 {iteration} 轮完成")
+
+            if iteration < total_iterations and config.interval_seconds > 0:
+                log(f"[AUTO] 等待 {config.interval_seconds} 秒后进入下一轮")
+                time.sleep(config.interval_seconds)
+
+        log(f"[SYSTEM] 进化结束，共执行 {total_iterations} 轮")
+        return 0
+    except KeyboardInterrupt as exc:
+        raise EvolutionInterrupted(workspace=workspace) from exc

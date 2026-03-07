@@ -368,6 +368,43 @@ def count_changed_files(workspace: Path) -> int:
     return len([line for line in status.stdout.splitlines() if line.strip()])
 
 
+def rollback_uncommitted_changes(workspace: Path) -> tuple[bool, int]:
+    resolved_workspace = workspace.resolve()
+    top_level = detect_repo_top_level(resolved_workspace)
+    if top_level is None:
+        raise RuntimeError(f"{resolved_workspace} 不是 git 仓库，无法执行回滚")
+    if top_level != resolved_workspace:
+        raise RuntimeError(
+            f"{resolved_workspace} 不是独立仓库根目录（当前仓库根目录: {top_level}），拒绝回滚"
+        )
+
+    status = run_git(resolved_workspace, ["status", "--porcelain"])
+    if status.returncode != 0:
+        raise RuntimeError(f"读取仓库状态失败：{extract_tail(status.stderr or status.stdout, 400)}")
+    pending_lines = [line for line in status.stdout.splitlines() if line.strip()]
+    if not pending_lines:
+        return False, 0
+
+    has_commit = run_git(resolved_workspace, ["rev-parse", "--verify", "HEAD"]).returncode == 0
+    if has_commit:
+        reset_result = run_git(resolved_workspace, ["reset", "--hard", "HEAD"], timeout_seconds=120)
+    else:
+        # 无提交历史时先撤销暂存，再配合 clean 删除未跟踪文件。
+        reset_result = run_git(resolved_workspace, ["reset", "--quiet"], timeout_seconds=120)
+    if reset_result.returncode != 0:
+        raise RuntimeError(f"回滚工作区失败：{extract_tail(reset_result.stderr or reset_result.stdout, 600)}")
+
+    clean_result = run_git(resolved_workspace, ["clean", "-fd"], timeout_seconds=120)
+    if clean_result.returncode != 0:
+        raise RuntimeError(f"清理未跟踪文件失败：{extract_tail(clean_result.stderr or clean_result.stdout, 600)}")
+
+    remaining = count_changed_files(resolved_workspace)
+    if remaining > 0:
+        raise RuntimeError(f"回滚后仍有未提交改动（{remaining} 项）")
+
+    return True, len(pending_lines)
+
+
 def build_commit_message(config: AppConfig, codex_message: str, iteration: int) -> str:
     base = sanitize_commit_message(codex_message) or f"第{iteration}轮自动进化更新"
     prefix = sanitize_commit_message(config.codex.git_commit_prefix)

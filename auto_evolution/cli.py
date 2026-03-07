@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from auto_evolution.logging_utils import log_error
-from auto_evolution.workflow import run_evolution
+from auto_evolution.git_tools import rollback_uncommitted_changes
+from auto_evolution.logging_utils import log, log_error
+from auto_evolution.workflow import EvolutionInterrupted, run_evolution
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +45,25 @@ def main() -> None:
             prompt_override=args.prompt,
             dry_run_override=args.dry_run,
         )
+    except EvolutionInterrupted as exc:
+        workspace = exc.workspace
+        if workspace is None:
+            log("[SYSTEM] 检测到 Ctrl+C，已中断执行并退出")
+            sys.exit(0)
+
+        try:
+            reverted, changed_count = rollback_uncommitted_changes(workspace)
+        except Exception as rollback_exc:
+            log_error(f"[ERROR] 检测到 Ctrl+C，但回滚未提交改动失败：{rollback_exc}")
+            sys.exit(1)
+
+        if reverted:
+            log(
+                f"[SYSTEM] 检测到 Ctrl+C，已中断执行并回滚 {changed_count} 个未提交改动项：{workspace}"
+            )
+        else:
+            log(f"[SYSTEM] 检测到 Ctrl+C，已中断执行；仓库无未提交改动：{workspace}")
+        sys.exit(0)
     except Exception as exc:
         log_error(f"[ERROR] {exc}")
         sys.exit(1)

@@ -3,6 +3,5 @@ projects/**
 config.json
 __pycache__/
 *.pyc
-prompts/sys-prompt.md
-prompts/user-prompt.md
+prompts/
 logs/

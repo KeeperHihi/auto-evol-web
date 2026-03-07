@@ -7,6 +7,8 @@ from typing import Any
 
 from auto_evolution.models import AppConfig, AgentSpec, default_multi_agent_specs
 
+TEMPLATE_DIR_NAME = ".template"
+
 
 def strip_json_comments(content: str) -> str:
     result: list[str] = []
@@ -256,12 +258,18 @@ def normalize_config(raw: dict[str, Any]) -> AppConfig:
 
 
 def load_config(config_file: Path) -> AppConfig:
-    if not config_file.exists():
-        raise FileNotFoundError(
-            f"未找到配置文件: {config_file}，请先从 config.template.json 复制生成 config.json"
-        )
+    resolved_config_file = config_file.resolve()
+    if not resolved_config_file.exists():
+        fallback = (resolved_config_file.parent / TEMPLATE_DIR_NAME / resolved_config_file.name).resolve()
+        if fallback.exists():
+            resolved_config_file = fallback
+        else:
+            raise FileNotFoundError(
+                f"未找到配置文件: {config_file}。\n"
+                f"请先执行: cp -rn {TEMPLATE_DIR_NAME}/. ."
+            )
 
-    content = config_file.read_text(encoding="utf-8")
+    content = resolved_config_file.read_text(encoding="utf-8")
     try:
         parsed = json.loads(strip_json_comments(content))
     except json.JSONDecodeError as exc:
@@ -285,3 +293,26 @@ def resolve_local_path_from_root(app_root: Path, path_value: str, field_name: st
         raise ValueError(f"{field_name} 必须位于项目根目录内部")
 
     return absolute
+
+
+def resolve_local_path_with_template_fallback(
+    app_root: Path,
+    path_value: str,
+    field_name: str,
+) -> Path:
+    primary = resolve_local_path_from_root(app_root, path_value, field_name)
+    if primary.exists():
+        return primary
+
+    candidate = Path(path_value)
+    if candidate.is_absolute():
+        return primary
+
+    template_root = (app_root / TEMPLATE_DIR_NAME).resolve()
+    fallback = (template_root / candidate).resolve()
+    if fallback != template_root and template_root not in fallback.parents:
+        raise ValueError(f"{field_name} 的模板路径必须位于 {TEMPLATE_DIR_NAME} 目录内部")
+    if fallback.exists():
+        return fallback
+
+    return primary

@@ -208,6 +208,17 @@ def _stream_reader(
         line_queue.put((source, None))
 
 
+def _terminate_subprocess(process: subprocess.Popen[str], grace_seconds: int = 3) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=grace_seconds)
+
+
 def run_codex_process_with_stream(
     command: str,
     args: list[str],
@@ -262,55 +273,56 @@ def run_codex_process_with_stream(
     start_at = time.monotonic()
     next_heartbeat_at = start_at + 15
 
-    while True:
-        now = time.monotonic()
-        if now - start_at > timeout_seconds:
-            process.terminate()
+    try:
+        while True:
+            now = time.monotonic()
+            if now - start_at > timeout_seconds:
+                _terminate_subprocess(process)
+                raise subprocess.TimeoutExpired(
+                    cmd=[command, *args],
+                    timeout=timeout_seconds,
+                    output="\n".join(stdout_lines),
+                    stderr="\n".join(stderr_lines),
+                )
+
+            if now >= next_heartbeat_at:
+                elapsed = int(now - start_at)
+                log(f"[HEARTBEAT] Codex 正在执行中（{elapsed}s）...")
+                next_heartbeat_at = now + 15
+
             try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=3)
-            raise subprocess.TimeoutExpired(
-                cmd=[command, *args],
-                timeout=timeout_seconds,
-                output="\n".join(stdout_lines),
-                stderr="\n".join(stderr_lines),
-            )
+                source, payload = line_queue.get(timeout=0.2)
+            except queue.Empty:
+                if process.poll() is not None and len(finished_streams) >= 2:
+                    break
+                continue
 
-        if now >= next_heartbeat_at:
-            elapsed = int(now - start_at)
-            log(f"[HEARTBEAT] Codex 正在执行中（{elapsed}s）...")
-            next_heartbeat_at = now + 15
+            if payload is None:
+                finished_streams.add(source)
+                if process.poll() is not None and len(finished_streams) >= 2:
+                    break
+                continue
 
-        try:
-            source, payload = line_queue.get(timeout=0.2)
-        except queue.Empty:
-            if process.poll() is not None and len(finished_streams) >= 2:
-                break
-            continue
+            if source == "stdout":
+                stdout_lines.append(payload)
+            else:
+                stderr_lines.append(payload)
 
-        if payload is None:
-            finished_streams.add(source)
-            if process.poll() is not None and len(finished_streams) >= 2:
-                break
-            continue
+            tagged = classify_codex_stream_line(payload, source, state)
+            if not tagged:
+                continue
+            if tagged.startswith("[CODEX-ERR]") or tagged.startswith("[CODEX-STDERR]"):
+                log_error(tagged)
+            else:
+                log(tagged)
+    except KeyboardInterrupt:
+        _terminate_subprocess(process)
+        log("[SYSTEM] 检测到 Ctrl+C，已中断当前 Codex 子进程")
+        raise
+    finally:
+        stdout_thread.join(timeout=1)
+        stderr_thread.join(timeout=1)
 
-        if source == "stdout":
-            stdout_lines.append(payload)
-        else:
-            stderr_lines.append(payload)
-
-        tagged = classify_codex_stream_line(payload, source, state)
-        if not tagged:
-            continue
-        if tagged.startswith("[CODEX-ERR]") or tagged.startswith("[CODEX-STDERR]"):
-            log_error(tagged)
-        else:
-            log(tagged)
-
-    stdout_thread.join(timeout=1)
-    stderr_thread.join(timeout=1)
     return_code = process.wait()
     return return_code, "\n".join(stdout_lines), "\n".join(stderr_lines)
 
