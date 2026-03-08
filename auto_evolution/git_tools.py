@@ -413,14 +413,20 @@ def build_commit_message(config: AppConfig, codex_message: str, iteration: int) 
     return base
 
 
+def format_workspace_tag(workspace: Path) -> str:
+    resolved = workspace.resolve()
+    return f"{resolved.name} ({resolved})"
+
+
 def commit_and_push_changes(
     config: AppConfig,
     workspace: Path,
     codex_message: str,
     iteration: int,
 ) -> tuple[bool, bool]:
+    workspace_tag = format_workspace_tag(workspace)
     if not config.codex.auto_git_commit:
-        log("[GIT] 已关闭自动提交（autoGitCommit=false）")
+        log(f"[GIT] [仓库={workspace_tag}] 已关闭自动提交（autoGitCommit=false）")
         return False, False
 
     add_result = run_git(workspace, ["add", "-A"], timeout_seconds=120)
@@ -433,7 +439,7 @@ def commit_and_push_changes(
 
     staged_files = [line.strip() for line in staged.stdout.splitlines() if line.strip()]
     if not staged_files:
-        log("[GIT] 未检测到可提交改动，跳过提交与推送")
+        log(f"[GIT] [仓库={workspace_tag}] 未检测到可提交改动，跳过提交与推送")
         return False, False
 
     message = build_commit_message(config, codex_message, iteration)
@@ -448,10 +454,10 @@ def commit_and_push_changes(
             )
         raise RuntimeError(f"git commit 失败：{details}")
 
-    log(f"[GIT] 已提交：{message}")
+    log(f"[GIT] [仓库={workspace_tag}] 已提交：{message}")
 
     if not config.codex.auto_git_push:
-        log("[GIT] 已关闭自动推送（autoGitPush=false）")
+        log(f"[GIT] [仓库={workspace_tag}] 已关闭自动推送（autoGitPush=false）")
         return True, False
 
     remote = config.codex.git_remote
@@ -460,5 +466,5 @@ def commit_and_push_changes(
     if push_result.returncode != 0:
         raise RuntimeError(f"git push 失败：{extract_tail(push_result.stderr or push_result.stdout, 1000)}")
 
-    log(f"[GIT] 已推送到 {remote}/{branch}")
+    log(f"[GIT] [仓库={workspace_tag}] 已推送到 {remote}/{branch}")
     return True, True
