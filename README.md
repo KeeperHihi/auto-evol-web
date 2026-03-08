@@ -3,7 +3,6 @@
 `Codex` 驱动的自进化项目框架
 
 ## 作品展示
-[3D五子棋](https://github.com/KeeperHihi/demo-WZQ.git)
 
 ## TODO
 - [ ] 适配 `claude code` 等更多平台
