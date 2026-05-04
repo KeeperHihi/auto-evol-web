@@ -245,6 +245,13 @@ def pull_remote_branch_if_exists(workspace: Path, remote_name: str, branch_name:
     log(f"[GIT] 已拉取最新代码: {remote_name}/{branch_name}")
 
 
+def list_unmerged_files(workspace: Path) -> list[str]:
+    result = run_git(workspace, ["diff", "--name-only", "--diff-filter=U"], timeout_seconds=30)
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def get_current_branch_name(workspace: Path) -> str:
     result = run_git(workspace, ["symbolic-ref", "--quiet", "--short", "HEAD"])
     if result.returncode != 0:
@@ -418,6 +425,48 @@ def format_workspace_tag(workspace: Path) -> str:
     return f"{resolved.name} ({resolved})"
 
 
+def pull_remote_before_push(
+    workspace: Path,
+    remote_name: str,
+    branch_name: str,
+    workspace_tag: str,
+) -> None:
+    has_remote_branch = run_git(
+        workspace,
+        ["ls-remote", "--heads", remote_name, branch_name],
+        timeout_seconds=30,
+    )
+    if has_remote_branch.returncode != 0:
+        details = extract_tail(has_remote_branch.stderr or has_remote_branch.stdout, 500)
+        raise RuntimeError(f"推送前检查远端分支失败：{details}")
+
+    if not (has_remote_branch.stdout or "").strip():
+        log(f"[GIT] [仓库={workspace_tag}] 远端分支 {remote_name}/{branch_name} 不存在，跳过推送前 pull")
+        return
+
+    log(f"[GIT] [仓库={workspace_tag}] 推送前同步远端：git pull {remote_name} {branch_name}")
+    pull_result = run_git(
+        workspace,
+        ["pull", "--no-rebase", "--no-edit", remote_name, branch_name],
+        timeout_seconds=180,
+    )
+    if pull_result.returncode == 0:
+        log(f"[GIT] [仓库={workspace_tag}] 推送前已同步远端 {remote_name}/{branch_name}")
+        return
+
+    details = extract_tail((pull_result.stderr or "") + "\n" + (pull_result.stdout or ""), 1000)
+    unmerged_files = list_unmerged_files(workspace)
+    if unmerged_files:
+        files = "\n".join(f"- {filename}" for filename in unmerged_files)
+        raise RuntimeError(
+            "推送前 git pull 检测到远程与本地存在冲突，已中断进化。\n"
+            f"冲突文件：\n{files}\n"
+            f"详细信息：{details}"
+        )
+
+    raise RuntimeError(f"推送前 git pull 失败，已中断进化：{details}")
+
+
 def commit_and_push_changes(
     config: AppConfig,
     workspace: Path,
@@ -462,6 +511,8 @@ def commit_and_push_changes(
 
     remote = config.codex.git_remote
     branch = normalize_branch_name(config.codex.git_branch)
+    pull_remote_before_push(workspace, remote, branch, workspace_tag)
+
     push_result = run_git(workspace, ["push", "-u", remote, branch], timeout_seconds=180)
     if push_result.returncode != 0:
         raise RuntimeError(f"git push 失败：{extract_tail(push_result.stderr or push_result.stdout, 1000)}")
